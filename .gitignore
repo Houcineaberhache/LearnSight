@@ -218,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local datasets (prevent GitHub 100MB limit)
+data/raw/*.csv
+data/processed/*.csv
+data/sample/*.csv
+!data/**/.gitkeep
+Data/
+
+# Virtual environment & pytest
+venv/
+.venv/
+.pytest_cache/
+
