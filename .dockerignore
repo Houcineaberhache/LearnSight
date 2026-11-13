@@ -1,0 +1,21 @@
+# =============================================================================
+# LearnSight — Contexte de build Docker
+# =============================================================================
+# Exclut les données volumineuses, environnements virtuels et secrets.
+# =============================================================================
+
+.git
+.gitignore
+.github
+.pytest_cache
+__pycache__
+*.py[cod]
+venv
+.venv
+env
+.env
+data/raw
+data/processed
+docs
+notebooks
+*.log

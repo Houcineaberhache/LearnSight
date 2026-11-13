@@ -240,7 +240,41 @@ def test_profile_schema_rejects_final_result_data_leakage(profile_schema, format
         jsonschema.validate(instance=sample, schema=profile_schema, format_checker=format_checker)
     assert "Additional properties are not allowed ('final_result' was unexpected)" in str(exc_info.value)
 
+def test_profile_schema_rejects_is_dropout_data_leakage(profile_schema, format_checker):
+    """Anti-Leakage : is_dropout ne doit pas figurer dans le profil d'entrée."""
+    sample = {
+        "metadata": {
+            "event_id": str(uuid.uuid4()),
+            "event_type": "student_profile",
+            "produced_at": datetime.now(timezone.utc).isoformat(),
+            "source_system": "oulad_simulation_producer",
+            "schema_version": "1.0"
+        },
+        "payload": {
+            "code_module": "AAA",
+            "code_presentation": "2013J",
+            "id_student": 11391,
+            "gender": "M",
+            "region": "East Anglian Region",
+            "highest_education": "HE Qualification",
+            "imd_band": "90-100%",
+            "age_band": "55<=",
+            "num_of_prev_attempts": 0,
+            "studied_credits": 240,
+            "disability": "N",
+            "is_dropout": 1
+        }
+    }
 
+    with pytest.raises(jsonschema.ValidationError) as exc_info:
+        jsonschema.validate(
+            instance=sample,
+            schema=profile_schema,
+            format_checker=format_checker
+        )
+
+    assert "is_dropout" in str(exc_info.value)
+    assert "Additional properties are not allowed" in str(exc_info.value)
 # =============================================================================
 # 4. Correction B : Validation stricte des formats UUID et date-time
 # =============================================================================

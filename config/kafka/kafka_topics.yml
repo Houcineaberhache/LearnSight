@@ -1,0 +1,22 @@
+topics:
+  clics_vle:
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 604800000  # 7 jours
+    description: "Student VLE click events from OULAD simulation"
+
+  evaluations:
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 604800000  # 7 jours
+    description: "Student assessment submission events from OULAD simulation"
+
+kafka:
+  bootstrap_servers: "${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
+  schema_version: "1.0"
+  source_system: "oulad_simulation_producer"
+  client_id: "learnsight-producer"
+  compression_type: "gzip"
+  acks: "all"
+  retries: 5
+  max_block_ms: 10000

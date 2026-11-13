@@ -1,8 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "StudentProfileEvent",
-  "description": "Schéma d'événement Kafka / Référentiel pour les caractéristiques démographiques et académiques (OULAD) sans fuite de données (cible ML exclue)",
-  "type": "object",
+  "description": "Référentiel statique des profils étudiants OULAD (non diffusé dans Kafka, aucun topic dédié) — caractéristiques démographiques et académiques sans fuite de données (cible ML exclue)",  "type": "object",
   "required": ["metadata", "payload"],
   "properties": {
     "metadata": {
