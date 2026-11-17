@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StudentAssessmentEvent",
+  "description": "Schéma d'événement Kafka pour les soumissions et notes d'évaluations (OULAD) - Supporte les modes brut et enrichi",
+  "type": "object",
+  "required": ["metadata", "payload"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["event_id", "event_type", "produced_at", "source_system", "schema_version"],
+      "properties": {
+        "event_id": { "type": "string", "format": "uuid" },
+        "event_type": { "type": "string", "enum": ["student_assessment"] },
+        "produced_at": { "type": "string", "format": "date-time" },
+        "source_system": { "type": "string" },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": ["id_assessment", "id_student", "date_submitted", "is_banked", "score"],
+      "properties": {
+        "id_assessment": { "type": "integer" },
+        "id_student": { "type": "integer" },
+        "date_submitted": { "type": "integer" },
+        "is_banked": { "type": "boolean" },
+        "score": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 100.0
+        },
+        "assessment_type": {
+          "type": "string",
+          "enum": ["TMA", "CMA", "Exam"]
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

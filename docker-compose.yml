@@ -1,0 +1,332 @@
+
+
+# =============================================================================
+# LearnSight — Infrastructure complète (Ingestion + Lakehouse + Analytics)
+# =============================================================================
+# Services : Zookeeper, Kafka, Kafka-UI, MinIO, Spark, PostgreSQL,
+#            Airflow (webserver + scheduler), Superset
+# =============================================================================
+
+networks:
+  learnsight-net:
+    driver: bridge
+
+volumes:
+  kafka_data:
+  zookeeper_data:
+  minio_data:
+  postgres_data:
+  airflow_logs:
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Zookeeper — Coordination Kafka
+  # --------------------------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: learnsight-zookeeper
+    hostname: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - learnsight-net
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Kafka Broker
+  # --------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: learnsight-kafka
+    hostname: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"    # Interne (accès depuis les conteneurs)
+      - "29092:29092"  # Externe (accès depuis l'hôte)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - learnsight-net
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Kafka UI — Interface de monitoring Kafka
+  # --------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: learnsight-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: learnsight
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - learnsight-net
+
+  # --------------------------------------------------------------------------
+  # Kafka Init — Création automatique des topics (profil "ingestion")
+  # --------------------------------------------------------------------------
+  kafka-init:
+    build:
+      context: .
+      dockerfile: docker/ingestion/Dockerfile
+    image: learnsight-ingestion:local
+    container_name: learnsight-kafka-init
+    profiles: ["ingestion"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    command:
+      - ingestion.producers.kafka_admin
+      - --bootstrap-servers
+      - kafka:9092
+      - --create
+      - --list
+    networks:
+      - learnsight-net
+    restart: "no"
+
+  # --------------------------------------------------------------------------
+  # Ingestion Producer — Rejoue OULAD vers Kafka (profil "ingestion")
+  # --------------------------------------------------------------------------
+  ingestion-producer:
+    build:
+      context: .
+      dockerfile: docker/ingestion/Dockerfile
+    image: learnsight-ingestion:local
+    container_name: learnsight-ingestion-producer
+    profiles: ["ingestion"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_CLICS_VLE: ${KAFKA_TOPIC_CLICS_VLE:-clics_vle}
+      KAFKA_TOPIC_EVALUATIONS: ${KAFKA_TOPIC_EVALUATIONS:-evaluations}
+    volumes:
+      # Les données OULAD nettoyées restent sur l'hôte (lecture seule)
+      - ./data:/data:ro
+    command:
+      - ingestion.producers.run_all_producers
+      - --data-dir
+      - /data/processed
+      - --delay
+      - "${INGESTION_DELAY:-0.01}"
+    networks:
+      - learnsight-net
+    restart: "no"
+
+  # --------------------------------------------------------------------------
+  # MinIO — Stockage objet compatible S3 (Lakehouse Bronze/Silver/Gold)
+  # --------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: learnsight-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console Web
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-learnsight}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-learnsight123}
+    volumes:
+      - minio_data:/data
+    networks:
+      - learnsight-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Spark Master
+  # --------------------------------------------------------------------------
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: learnsight-spark-master
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      SPARK_MASTER_URL: spark://spark-master:7077
+    ports:
+      - "7077:7077"   # Spark master port
+      - "8081:8080"   # Spark Web UI
+    networks:
+      - learnsight-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Spark Worker
+  # --------------------------------------------------------------------------
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: learnsight-spark-worker
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_CORES: 2
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    networks:
+      - learnsight-net
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL — Métadonnées Airflow & Superset
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    container_name: learnsight-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-learnsight}
+      POSTGRES_USER: ${POSTGRES_USER:-learnsight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learnsight123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - learnsight-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-learnsight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Airflow — Webserver (UI + API)
+  # --------------------------------------------------------------------------
+  airflow-webserver:
+    image: apache/airflow:2.8.1-python3.11
+    container_name: learnsight-airflow-webserver
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: webserver
+    ports:
+      - "8082:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN:-postgresql+psycopg2://learnsight:learnsight123@postgres:5432/airflow}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:-}
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-admin}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    networks:
+      - learnsight-net
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Airflow — Scheduler
+  # --------------------------------------------------------------------------
+  airflow-scheduler:
+    image: apache/airflow:2.8.1-python3.11
+    container_name: learnsight-airflow-scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_healthy
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR:-LocalExecutor}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN:-postgresql+psycopg2://learnsight:learnsight123@postgres:5432/airflow}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:-}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    networks:
+      - learnsight-net
+
+  # --------------------------------------------------------------------------
+  # Superset — Tableau de bord & Analytics
+  # --------------------------------------------------------------------------
+  superset:
+    image: apache/superset:3.1.0
+    container_name: learnsight-superset
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-changeme_superset_secret_key}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-learnsight}:${POSTGRES_PASSWORD:-learnsight123}@postgres:5432/${POSTGRES_DB:-learnsight}
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin
+          --username admin
+          --firstname Admin
+          --lastname LearnSight
+          --email admin@learnsight.local
+          --password admin || true &&
+        superset init &&
+        superset run -p 8088 --with-threads --reload --debugger
+      "
+    networks:
+      - learnsight-net

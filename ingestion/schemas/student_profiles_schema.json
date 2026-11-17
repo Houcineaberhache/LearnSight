@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StudentProfileEvent",
+  "description": "Référentiel statique des profils étudiants OULAD (non diffusé dans Kafka, aucun topic dédié) — caractéristiques démographiques et académiques sans fuite de données (cible ML exclue)",  "type": "object",
+  "required": ["metadata", "payload"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["event_id", "event_type", "produced_at", "source_system", "schema_version"],
+      "properties": {
+        "event_id": { "type": "string", "format": "uuid" },
+        "event_type": { "type": "string", "enum": ["student_profile"] },
+        "produced_at": { "type": "string", "format": "date-time" },
+        "source_system": { "type": "string" },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "code_module",
+        "code_presentation",
+        "id_student",
+        "gender",
+        "region",
+        "highest_education",
+        "imd_band",
+        "age_band",
+        "num_of_prev_attempts",
+        "studied_credits",
+        "disability"
+      ],
+      "properties": {
+        "code_module": { "type": "string", "minLength": 3, "maxLength": 3 },
+        "code_presentation": { "type": "string", "minLength": 5, "maxLength": 5 },
+        "id_student": { "type": "integer" },
+        "gender": { "type": "string", "enum": ["M", "F"] },
+        "region": { "type": "string" },
+        "highest_education": { "type": "string" },
+        "imd_band": { "type": ["string", "null"] },
+        "age_band": { "type": "string", "enum": ["0-35", "35-55", "55<="] },
+        "num_of_prev_attempts": { "type": "integer", "minimum": 0 },
+        "studied_credits": { "type": "integer", "minimum": 0 },
+        "disability": { "type": "string", "enum": ["Y", "N"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

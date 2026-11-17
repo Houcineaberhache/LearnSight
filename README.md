@@ -245,6 +245,65 @@ Environment variables and service startup instructions will be documented in `do
 
 ---
 
+## 📡 Ingestion Pipeline (Student 1)
+
+The ingestion module replays cleaned OULAD data into Kafka through two
+validated event streams.
+
+| Topic | Content | Producer |
+|---|---|---|
+| `clics_vle` | VLE clicks and interactions | `vle_producer.py` |
+| `evaluations` | Assessment submissions and scores | `evaluations_producer.py` |
+
+> Student profiles (`studentInfo.csv`) are **static reference data**, not a
+> streaming topic. They are loaded by the Lakehouse directly from the cleaned
+> files and are never published to Kafka.
+
+### Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r ingestion/requirements.txt
+
+# 2. Clean the OULAD dataset
+python ingestion/clean_oulad.py --data-dir data/raw --output-dir data/processed
+
+# 3. Start Kafka and create topics
+docker compose up -d zookeeper kafka kafka-ui
+python -m ingestion.producers.kafka_admin --create --list
+
+# 4. Replay events (2 producers in parallel)
+python -m ingestion.producers.run_all_producers --limit 1000 --delay 0.01
+
+# 5. Verify messages against JSON contracts
+python -m ingestion.producers.kafka_consumer --topic clics_vle \
+    --from-beginning --max-messages 10 --validate
+```
+
+On Windows, `.\scripts\run_ingestion.ps1 -Limit 1000` wraps steps 3 and 4.
+A Docker profile is also available:
+
+```bash
+# Ingestion stack only (Kafka + topic init + producers)
+docker compose --profile ingestion up -d zookeeper kafka kafka-init ingestion-producer
+
+# Or the full platform, including the ingestion profile
+docker compose --profile ingestion up -d --build
+```
+
+### Documentation
+
+- [Ingestion module README](ingestion/README.md)
+- [Kafka event contracts](docs/kafka_events.md)
+- [Data dictionary](docs/data_dictionary.md)
+- [Ingestion changelog](ingestion/README_CHANGELOG.md)
+
+> **Anti-leakage rule:** `final_result` / `is_dropout` is the ML target and is
+> never published to Kafka. It is isolated in
+> `data/processed/student_target_labels.csv`.
+
+---
+
 ## 🐳 Docker Development Strategy
 
 LearnSight uses a **local development + shared integration** approach.
@@ -429,7 +488,7 @@ Predictions are intended as decision-support signals, not definitive judgments a
 | Phase | Focus | Status |
 |---|---|---|
 | Week 1 | GitHub setup, architecture, dataset exploration | Planned |
-| Week 2 | Kafka ingestion and Bronze | Planned |
+| Week 2 | Kafka ingestion and Bronze | In progress |
 | Week 3 | Spark and Hudi Silver/Gold | Planned |
 | Week 4 | Feature engineering and ML | Planned |
 | Week 5 | Airflow and Superset | Planned |

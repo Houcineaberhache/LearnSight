@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VLEClickEvent",
+  "description": "Schéma d'événement Kafka pour les clics et interactions VLE (OULAD)",
+  "type": "object",
+  "required": ["metadata", "payload"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["event_id", "event_type", "produced_at", "source_system", "schema_version"],
+      "properties": {
+        "event_id": { "type": "string", "format": "uuid" },
+        "event_type": { "type": "string", "enum": ["vle_click"] },
+        "produced_at": { "type": "string", "format": "date-time" },
+        "source_system": { "type": "string" },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": ["code_module", "code_presentation", "id_student", "id_site", "date", "sum_click"],
+      "properties": {
+        "code_module": { "type": "string", "minLength": 3, "maxLength": 3 },
+        "code_presentation": { "type": "string", "minLength": 5, "maxLength": 5 },
+        "id_student": { "type": "integer" },
+        "id_site": { "type": "integer" },
+        "date": { "type": "integer" },
+        "sum_click": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
