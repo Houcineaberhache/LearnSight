@@ -33,10 +33,10 @@ studentVle.csv       ──►   studentVle.csv       ──────► clic
 | `courses.csv` | 22 présentations | `(code_module, code_presentation)` | Modules et sessions |
 | `assessments.csv` | 206 évaluations | `id_assessment` | Métadonnées des évaluations |
 | `vle.csv` | 6 364 ressources | `id_site` | Ressources du VLE |
-| `studentInfo.csv` | 32 593 inscriptions | `(code_module, code_presentation, id_student)` | Profil et résultat final |
+| `studentInfo.csv` | 32 593 inscriptions | `(code_module, code_presentation, id_student)` | Profil étudiant et résultat final (données brutes) |
 | `studentRegistration.csv` | 32 593 inscriptions | `(code_module, code_presentation, id_student)` | Inscription / désinscription |
 | `studentAssessment.csv` | 173 912 soumissions | `(id_assessment, id_student)` | Notes par évaluation |
-| `studentVle.csv` | 10 655 280 interactions | `(code_module, code_presentation, id_student, id_site, date)` | Clics quotidiens |
+| `studentVle.csv` | 10 655 280 interactions | Aucune clé unique — combinaison répétée | Clics quotidiens |
 
 ### Colonnes principales
 
@@ -49,7 +49,7 @@ studentVle.csv       ──►   studentVle.csv       ──────► clic
 | `studentInfo` | `imd_band` | string \| null | Tranche IMD ; `null` si inconnue |
 | `studentInfo` | `final_result` | string | **Cible ML** : `Pass`, `Fail`, `Withdrawn`, `Distinction` |
 | `studentRegistration` | `date_registration` | int \| null | Inscription relative à $J_0$ (négatif = avant le cours) |
-| `studentRegistration` | `date_unregistration` | int \| null | Désinscription ; `null` = pas d'abandon enregistré |
+| `studentRegistration` | `date_unregistration` | int \| null | Désinscription ; `null` = aucune date de désinscription enregistrée |
 | `studentAssessment` | `date_submitted` | int | Soumission relative à $J_0$ |
 | `studentAssessment` | `is_banked` | int (0/1) | Résultat reporté d'une session précédente |
 | `studentAssessment` | `score` | float \| null | Note 0–100 ; `null` si non notée |
@@ -84,8 +84,7 @@ les règles suivantes : aucune ligne supprimée, sentinelles `?` converties en
 | `final_result` | string | Résultat final OULAD |
 | `is_dropout` | int (0/1) | `1` si `final_result == "Withdrawn"`, sinon `0` |
 
-> ⚠️ Ce fichier ne doit **jamais** être publié dans Kafka ni joint aux features
-> avant l'étape d'évaluation ML (prévention du data leakage).
+⚠️ `student_target_labels.csv` ne doit jamais être publié dans Kafka ni utilisé comme variable explicative (feature). Il contient les labels cibles nécessaires à l'entraînement et à l'évaluation des modèles, afin d'éviter toute fuite de données (*data leakage*).
 
 ---
 
@@ -109,7 +108,7 @@ les règles suivantes : aucune ligne supprimée, sentinelles `?` converties en
 | Lignes perdues au nettoyage | `0` pour les 7 tables |
 | Dates négatives | conservées (activité pré-rentrée) |
 | `score` manquant | conservé en `null` (jamais `0`) |
-| `date_unregistration` manquant | conservé en `null` (pas d'abandon) |
+| `date_unregistration` manquant | conservé en `null` (aucune date de désinscription enregistrée) |
 | `imd_band` manquant | conservé en `null` |
 | `final_result` dans un flux | interdit par les schémas et les tests |
 
@@ -127,21 +126,47 @@ les règles suivantes : aucune ligne supprimée, sentinelles `?` converties en
 ## 6. Relations
 
 ```text
-courses (code_module, code_presentation)
+
+courses
+(PK: code_module, code_presentation)
    │
-   ├── assessments (id_assessment)
-   │        │
-   │        └── studentAssessment (id_student)
+   ├── 1 ─── 0..N ── assessments
+   │                  (PK: id_assessment)
+   │                       │
+   │                       └── 1 ─── 0..N ── studentAssessment
+   │                                          (PK: id_assessment, id_student)
    │
-   ├── vle (id_site)
-   │        │
-   │        └── studentVle (id_student, date)
+   ├── 1 ─── 0..N ── vle
+   │                  (PK: id_site)
+   │                       │
+   │                       └── 1 ─── 0..N ── studentVle
+   │                                          (FK: id_site)
    │
-   ├── studentInfo (id_student)  ──► cible ML
+   ├── 1 ─── 0..N ── studentInfo
+   │                  (PK: code_module, code_presentation, id_student)
    │
-   └── studentRegistration (id_student)
+   ├── 1 ─── 0..N ── studentRegistration
+   │                  (PK: code_module, code_presentation, id_student)
+   │
+   └── 1 ─── 0..N ── studentVle
+                      (FK: code_module, code_presentation)
+
 ```
 
-`id_student` identifie un étudiant **au sein d'une inscription** : un même
-étudiant peut apparaître dans plusieurs modules/présentations. Les jointures
-doivent donc inclure `code_module` et `code_presentation`.
+Intégrité référentielle :
+
+Pour les tables contenant les colonnes (code_module, code_presentation),
+les références aux cours correspondent aux clés présentes dans courses.
+Aucune référence inconnue n'a été détectée.
+
+La colonne vle.id_site est unique. Tous les identifiants id_site
+présents dans studentVle existent dans vle. Certains sites ne
+possèdent aucun enregistrement d'activité.
+
+La combinaison (code_module, code_presentation, id_student)
+identifie une inscription dans studentInfo et studentRegistration.
+Les deux tables présentent les mêmes inscriptions dans les données traitées.
+
+Les identifiants id_assessment présents dans studentAssessment
+existent tous dans assessments. Certaines évaluations ne possèdent
+aucune soumission.
