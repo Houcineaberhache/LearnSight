@@ -278,6 +278,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./spark:/opt/airflow/jobs
+      - ./lakehouse:/opt/airflow/lakehouse
       - airflow_logs:/opt/airflow/logs
     networks:
       - learnsight-net
@@ -308,6 +309,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./spark:/opt/airflow/jobs
+      - ./lakehouse:/opt/airflow/lakehouse
       - airflow_logs:/opt/airflow/logs
     networks:
       - learnsight-net
