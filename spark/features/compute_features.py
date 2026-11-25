@@ -1,18 +1,20 @@
 import sys
 import os
+import argparse
 from pyspark.sql import SparkSession, functions as F
 
 KEYS = ["code_module", "code_presentation", "id_student"]
 
 
 def get_spark():
-    return (
-        SparkSession.builder.appName("learnsight-features")
-        .master("local[2]")
-        .config("spark.driver.memory", "3g")
-        .config("spark.sql.shuffle.partitions", "8")
-        .getOrCreate()
-    )
+    builder = SparkSession.builder.appName("learnsight-features")
+    if "PYSPARK_GATEWAY_PORT" not in os.environ:  # plain `python` run on the laptop
+        builder = (
+            builder.master("local[2]")
+            .config("spark.driver.memory", "3g")
+            .config("spark.sql.shuffle.partitions", "8")
+        )
+    return builder.getOrCreate()
 
 
 def load_csv(spark, data_dir, name):
@@ -102,8 +104,12 @@ def add_info_features(spark, data_dir, feats):
     return feats.join(info, KEYS, "left")
 
 if __name__ == "__main__":
-    data_dir = sys.argv[1] if len(sys.argv) > 1 else "data/processed"
-    week = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date", help="run date from Airflow (YYYY-MM-DD), not used yet")
+    parser.add_argument("--week", type=int, default=8)
+    parser.add_argument("--data-dir", default="data/processed")
+    args = parser.parse_args()
+    data_dir, week = args.data_dir, args.week
     spark = get_spark()
     spark.sparkContext.setLogLevel("WARN")
     base = build_base(spark, data_dir, week)
