@@ -51,6 +51,21 @@ def data_dir(tmp_path_factory):
         {**KEY, "id_student": 1, "id_site": 1, "date": 30, "sum_click": 1000},
     ])
     vle.to_csv(d / "studentVle.csv", index=False)
+    assess = pd.DataFrame([
+        {**KEY, "id_assessment": 1, "date": 10},
+        {**KEY, "id_assessment": 2, "date": 20},
+        {**KEY, "id_assessment": 3, "date": None},
+        {**KEY, "id_assessment": 4, "date": 5},
+    ])
+    assess["date"] = assess["date"].astype("Int64")
+    assess.to_csv(d / "assessments.csv", index=False)
+
+    sub = pd.DataFrame([
+        {"id_assessment": 1, "id_student": 1, "date_submitted": 9, "is_banked": 0, "score": 80},
+        {"id_assessment": 2, "id_student": 1, "date_submitted": 15, "is_banked": 0, "score": 90},
+        {"id_assessment": 4, "id_student": 1, "date_submitted": 0, "is_banked": 1, "score": 50},
+    ])
+    sub.to_csv(d / "studentAssessment.csv", index=False)
     return d.as_posix()
 
 
@@ -77,3 +92,26 @@ def test_student_without_clicks_is_kept_with_zero(spark, data_dir):
     row = feats.filter("id_student = 3").first()
     assert row["total_clicks"] == 0
     assert row["active_days"] == 0
+
+def assessment_features(spark, data_dir):
+    base = cf.build_base(spark, data_dir, CUTOFF_WEEK)
+    return cf.add_assessment_features(spark, data_dir, base, CUTOFF_WEEK)
+
+
+def test_missed_counts_only_assessments_due_before_cutoff(spark, data_dir):
+    feats = assessment_features(spark, data_dir)
+    assert feats.filter("id_student = 1").first()["n_missed"] == 0
+    assert feats.filter("id_student = 3").first()["n_missed"] == 2
+
+
+def test_late_and_banked_results_are_excluded_from_score(spark, data_dir):
+    row = assessment_features(spark, data_dir).filter("id_student = 1").first()
+    assert row["n_submitted"] == 1
+    assert row["avg_score"] == 80.0
+
+
+def test_no_submission_gives_null_score_not_zero(spark, data_dir):
+    row = assessment_features(spark, data_dir).filter("id_student = 3").first()
+    assert row["n_submitted"] == 0
+    assert row["avg_score"] is None
+    
