@@ -231,3 +231,6 @@ venv/
 .venv/
 .pytest_cache/
 
+
+# Trained models
+models/
