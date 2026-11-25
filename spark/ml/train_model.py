@@ -51,7 +51,8 @@ if __name__ == "__main__":
     }
 
     for name, clf in models.items():
-        pred = Pipeline(stages=[imputer, assembler, clf]).fit(train).transform(test)
+        fitted = Pipeline(stages=[imputer, assembler, clf]).fit(train)
+        pred = fitted.transform(test)
         for metric in ["areaUnderPR", "areaUnderROC"]:
             ev = BinaryClassificationEvaluator(
                 labelCol=LABEL, rawPredictionCol="rawPrediction", metricName=metric
@@ -74,3 +75,5 @@ if __name__ == "__main__":
             print(sp.groupby("risk_group")[LABEL].agg(["count", "mean"]).round(3))
             os.makedirs("data/predictions", exist_ok=True)
             sp.to_csv("data/predictions/predictions_w8.csv", index=False)
+            fitted.write().overwrite().save("models/rf_w8")
+            print("model saved: models/rf_w8")
