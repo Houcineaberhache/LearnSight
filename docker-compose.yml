@@ -160,7 +160,7 @@ services:
   # MinIO — Stockage objet compatible S3 (Lakehouse Bronze/Silver/Gold)
   # --------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     container_name: learnsight-minio
     command: server /data --console-address ":9001"
     ports:
@@ -183,7 +183,7 @@ services:
   # Spark Master
   # --------------------------------------------------------------------------
   spark-master:
-    image: bitnami/spark:3.5
+    image: bitnamilegacy/spark:3.5
     container_name: learnsight-spark-master
     environment:
       SPARK_MODE: master
@@ -207,7 +207,7 @@ services:
   # Spark Worker
   # --------------------------------------------------------------------------
   spark-worker:
-    image: bitnami/spark:3.5
+    image: bitnamilegacy/spark:3.5
     container_name: learnsight-spark-worker
     depends_on:
       spark-master:
