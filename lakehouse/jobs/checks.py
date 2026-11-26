@@ -30,7 +30,7 @@ def silver_clics_errors(df):
 
 def silver_evaluations_errors(df):
     errs = _generic(df, "silver_evaluations",
-                    ["event_id", "id_assessment", "id_student", "date_submitted"],
+                    ["event_id", "id_assessment", "id_student", "date_submitted", "code_module", "code_presentation"],
                     ["id_assessment", "id_student"])
     if df.filter("score IS NOT NULL AND (score < 0 OR score > 100)").count():
         errs.append("silver_evaluations: score outside 0-100")
@@ -45,4 +45,21 @@ def gold_weekly_errors(df):
         errs.append("gold_weekly_engagement: negative total_clicks")
     if df.filter("active_days < 1 OR active_days > 7").count():
         errs.append("gold_weekly_engagement: active_days outside 1-7")
+    return errs
+
+
+def silver_assessments_errors(df):
+    return _generic(df, "silver_assessments", ["id_assessment", "code_module", "code_presentation"], ["id_assessment"])
+
+
+def silver_registration_errors(df):
+    return _generic(df, "silver_student_registration", ["code_module", "code_presentation", "id_student"],
+                    ["code_module", "code_presentation", "id_student"])
+
+
+def silver_student_info_errors(df):
+    errs = _generic(df, "silver_student_info", ["code_module", "code_presentation", "id_student"],
+                    ["code_module", "code_presentation", "id_student"])
+    if "final_result" in df.columns:
+        errs.append("silver_student_info: final_result must not be present (target leakage)")
     return errs

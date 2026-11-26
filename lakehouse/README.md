@@ -6,13 +6,19 @@ Kafka -> **Bronze** (raw Parquet) -> **Silver** (Hudi, typed, deduplicated) -> *
 |---|---|---|---|
 | Bronze | `bronze_clics_vle`, `bronze_evaluations` (`learnsight-bronze`) | kafka topic/partition/offset | raw_value, kafka_topic, kafka_partition, kafka_offset, kafka_timestamp, ingested_at |
 | Silver | `silver_clics_vle` (`learnsight-silver`) | event_id | event_id, produced_at, code_module, code_presentation, id_student, id_site, date, sum_click |
-| Silver | `silver_evaluations` | id_assessment + id_student | event_id, produced_at, id_assessment, id_student, date_submitted, is_banked, score, weight, assessment_type |
+| Silver | `silver_evaluations` | id_assessment + id_student | event_id, produced_at, code_module, code_presentation (joined from silver_assessments), id_assessment, id_student, date_submitted, is_banked, score, weight, assessment_type |
+| Silver (static) | `silver_assessments` | id_assessment | id_assessment, code_module, code_presentation, assessment_type, date, weight |
+| Silver (static) | `silver_student_registration` | module + presentation + student | date_registration, date_unregistration |
+| Silver (static) | `silver_student_info` | module + presentation + student | profile columns, **no final_result** |
 | Gold | `gold_weekly_engagement` (`learnsight-gold`) | module + presentation + student + week | total_clicks, active_days, clicks_change_vs_prev_week, updated_at (week = floor(date/7)) |
+
+`gold_weekly_engagement` is **sparse**: only weeks with at least one click have a row. `clicks_change_vs_prev_week` compares with the previous *active* week.
 
 Note: `silver_clics_vle` is keyed on `event_id` because several clicks can share student+site+date.
 
 ## Run (local, from the project root)
 ```
+.\scripts\run_lakehouse_job.ps1 silver_static.py
 .\scripts\run_lakehouse_job.ps1 bronze_ingest.py clics_vle
 .\scripts\run_lakehouse_job.ps1 silver.py clics_vle
 .\scripts\run_lakehouse_job.ps1 gold_weekly_engagement.py

@@ -15,6 +15,9 @@ spark = get_spark("validate_silver")
 errors = []
 errors += checks.silver_clics_errors(spark.read.format("hudi").load(f"{SILVER}/silver_clics_vle"))
 errors += checks.silver_evaluations_errors(spark.read.format("hudi").load(f"{SILVER}/silver_evaluations"))
+errors += checks.silver_assessments_errors(spark.read.format("hudi").load(f"{SILVER}/silver_assessments"))
+errors += checks.silver_registration_errors(spark.read.format("hudi").load(f"{SILVER}/silver_student_registration"))
+errors += checks.silver_student_info_errors(spark.read.format("hudi").load(f"{SILVER}/silver_student_info"))
 if errors:
     print("VALIDATION FAILED:")
     for e in errors:
