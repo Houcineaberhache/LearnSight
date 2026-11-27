@@ -1,4 +1,4 @@
-"""Airflow step 'bronze_to_silver': Kafka -> Bronze -> Silver (Hudi), both topics.
+"""Airflow step 'bronze_to_silver': static tables, then Kafka -> Bronze -> Silver (Hudi), both topics.
 Usage: bronze_to_silver.py [--date YYYY-MM-DD]   (exit code 0 = success)
 Bronze reads everything new since the last checkpoint, so --date is only logged.
 """
@@ -13,6 +13,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--date", default=None)
 args, _ = ap.parse_known_args()
 print(f"[bronze_to_silver] run date: {args.date}")
+
+sys.argv = ["silver_static.py"]
+print("[bronze_to_silver] silver_static.py")
+runpy.run_path(os.path.join(JOBS, "silver_static.py"), run_name="__main__")
 
 for topic in ("clics_vle", "evaluations"):
     for script in ("bronze_ingest.py", "silver.py"):

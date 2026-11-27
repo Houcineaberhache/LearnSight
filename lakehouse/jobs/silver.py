@@ -55,6 +55,12 @@ def parse_bronze(raw, payload_schema):
     )
 
 
+def add_course(evals, assessments):
+    """Evaluation events carry only id_assessment; take the course from the static assessments table."""
+    a = assessments.select("id_assessment", "code_module", "code_presentation")
+    return evals.join(a, "id_assessment", "left")
+
+
 if __name__ == "__main__":
     topic = sys.argv[1]
     cfg = TABLES[topic]
@@ -63,6 +69,8 @@ if __name__ == "__main__":
 
     raw = spark.read.parquet(f"{BRONZE}/bronze_{topic}")
     silver = parse_bronze(raw, cfg["payload"])
+    if topic == "evaluations":  # needs silver_static.py to have run first
+        silver = add_course(silver, spark.read.format("hudi").load(f"{SILVER}/silver_assessments"))
 
     opts = hudi_options(table, cfg["key"], cfg["partition"], "produced_at")
     silver.write.format("hudi").options(**opts).mode("append").save(f"{SILVER}/{table}")
