@@ -28,6 +28,8 @@ if __name__ == "__main__":
     spark.sparkContext.setLogLevel("WARN")
     df = spark.read.csv("data/features/features_w8.csv", header=True, inferSchema=True)
     df = df.withColumn(LABEL, F.col(LABEL).cast("double"))
+    week = int(df.first()["cutoff_week"])
+    metrics_rows = []
 
     train = df.filter(F.col("code_presentation") != "2014J")
     test = df.filter(F.col("code_presentation") == "2014J")
@@ -53,11 +55,13 @@ if __name__ == "__main__":
     for name, clf in models.items():
         fitted = Pipeline(stages=[imputer, assembler, clf]).fit(train)
         pred = fitted.transform(test)
+        aucs = {}
         for metric in ["areaUnderPR", "areaUnderROC"]:
             ev = BinaryClassificationEvaluator(
                 labelCol=LABEL, rawPredictionCol="rawPrediction", metricName=metric
             )
-            print(f"{name} | {metric}: {ev.evaluate(pred):.3f}")
+            aucs[metric] = ev.evaluate(pred)
+            print(f"{name} | {metric}: {aucs[metric]:.3f}")
 
         rows = pred.groupBy(LABEL, "prediction").count().collect()
         cm = {(r[LABEL], r["prediction"]): r["count"] for r in rows}
@@ -68,6 +72,12 @@ if __name__ == "__main__":
         f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
         print(f"{name} | TP={tp} FP={fp} FN={fn} TN={tn}")
         print(f"{name} | precision={precision:.3f} recall={recall:.3f} f1={f1:.3f}")
+        metrics_rows.append({
+            "model_name": name, "cutoff_week": week, "test_period": "2014J",
+            "pr_auc": round(aucs["areaUnderPR"], 4), "roc_auc": round(aucs["areaUnderROC"], 4),
+            "precision": round(precision, 4), "recall": round(recall, 4), "f1": round(f1, 4),
+            "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+        })       
         if name == "RandomForest":
             scored = pred.withColumn("risk_score", F.round(vector_to_array("probability")[1], 4))
             sp = scored.select(*KEYS, "cutoff_week", "risk_score", LABEL).toPandas()
@@ -77,3 +87,6 @@ if __name__ == "__main__":
             sp.to_csv("data/predictions/predictions_w8.csv", index=False)
             fitted.write().overwrite().save("models/rf_w8")
             print("model saved: models/rf_w8")
+
+    pd.DataFrame(metrics_rows).to_csv(f"data/predictions/model_metrics_w{week}.csv", index=False)
+    print(f"metrics saved: data/predictions/model_metrics_w{week}.csv")
