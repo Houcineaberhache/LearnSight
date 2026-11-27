@@ -1,4 +1,5 @@
 import os
+SPARK_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 import pandas as pd
 from pyspark.ml.functions import vector_to_array
@@ -26,7 +27,7 @@ def get_spark():
 if __name__ == "__main__":
     spark = get_spark()
     spark.sparkContext.setLogLevel("WARN")
-    df = spark.read.csv("data/features/features_w8.csv", header=True, inferSchema=True)
+    df = spark.read.csv(os.path.join(SPARK_DIR, "data", "features", "features_w8.csv"), header=True, inferSchema=True)
     df = df.withColumn(LABEL, F.col(LABEL).cast("double"))
     week = int(df.first()["cutoff_week"])
     metrics_rows = []
@@ -83,10 +84,10 @@ if __name__ == "__main__":
             sp = scored.select(*KEYS, "cutoff_week", "risk_score", LABEL).toPandas()
             sp["risk_group"] = 5 - pd.qcut(sp["risk_score"].rank(method="first"), 5, labels=False)
             print(sp.groupby("risk_group")[LABEL].agg(["count", "mean"]).round(3))
-            os.makedirs("data/predictions", exist_ok=True)
-            sp.to_csv("data/predictions/predictions_w8.csv", index=False)
-            fitted.write().overwrite().save("models/rf_w8")
+            os.makedirs(os.path.join(SPARK_DIR, "data", "predictions"), exist_ok=True)
+            sp.to_csv(os.path.join(SPARK_DIR, "data", "predictions", "predictions_w8.csv"), index=False)
+            fitted.write().overwrite().save(os.path.join(SPARK_DIR, "models", "rf_w8"))
             print("model saved: models/rf_w8")
 
-    pd.DataFrame(metrics_rows).to_csv(f"data/predictions/model_metrics_w{week}.csv", index=False)
+    pd.DataFrame(metrics_rows).to_csv(os.path.join(SPARK_DIR, "data", "predictions", f"model_metrics_w{week}.csv"), index=False)
     print(f"metrics saved: data/predictions/model_metrics_w{week}.csv")

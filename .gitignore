@@ -234,3 +234,11 @@ venv/
 
 # Trained models
 models/
+
+# Spark job outputs (generated)
+spark/data/
+!spark/models/
+
+# Spark job outputs (generated)
+spark/data/
+!spark/models/

@@ -6,15 +6,18 @@ from pyspark.sql import SparkSession, functions as F
 KEYS = ["code_module", "code_presentation", "id_student"]
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+SPARK_DIR = os.path.abspath(os.path.join(HERE, ".."))  # spark/ locally, /opt/airflow/jobs in Docker
+
+
 def get_spark():
-    builder = SparkSession.builder.appName("learnsight-features")
-    if "PYSPARK_GATEWAY_PORT" not in os.environ:  # plain `python` run on the laptop
-        builder = (
-            builder.master("local[2]")
-            .config("spark.driver.memory", "3g")
-            .config("spark.sql.shuffle.partitions", "8")
-        )
-    return builder.getOrCreate()
+    return (
+        SparkSession.builder.appName("learnsight-features")
+        .master("local[2]")  # always local: the worker cannot see our files
+        .config("spark.driver.memory", "3g")
+        .config("spark.sql.shuffle.partitions", "8")
+        .getOrCreate()
+    )
 
 
 def load_csv(spark, data_dir, name):
@@ -107,7 +110,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", help="run date from Airflow (YYYY-MM-DD), not used yet")
     parser.add_argument("--week", type=int, default=8)
-    parser.add_argument("--data-dir", default="data/processed")
+    parser.add_argument("--data-dir", default=os.getenv("STATIC_DIR", os.path.join(SPARK_DIR, "..", "data", "processed")))
+    parser.add_argument("--out-dir", default=os.path.join(SPARK_DIR, "data", "features"))
     args = parser.parse_args()
     data_dir, week = args.data_dir, args.week
     spark = get_spark()
@@ -124,6 +128,7 @@ if __name__ == "__main__":
         F.round(F.avg("studied_credits"), 1).alias("avg_credits"),
     ).show()
 
-    os.makedirs("data/features", exist_ok=True)
-    feats.toPandas().to_csv(f"data/features/features_w{week}.csv", index=False)
-    print("saved: data/features/features_w{}.csv".format(week))
+    os.makedirs(args.out_dir, exist_ok=True)
+    out_path = os.path.join(args.out_dir, f"features_w{week}.csv")
+    feats.toPandas().to_csv(out_path, index=False)
+    print(f"saved: {out_path}")

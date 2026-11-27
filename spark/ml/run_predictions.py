@@ -8,23 +8,32 @@ from pyspark.sql import SparkSession, Window, functions as F
 KEYS = ["code_module", "code_presentation", "id_student"]
 
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+SPARK_DIR = os.path.abspath(os.path.join(HERE, ".."))  # spark/ locally, /opt/airflow/jobs in Docker
+
+
 def get_spark():
-    builder = SparkSession.builder.appName("learnsight-predict")
-    if "PYSPARK_GATEWAY_PORT" not in os.environ:  # plain `python` run on the laptop
-        builder = builder.master("local[2]").config("spark.driver.memory", "3g")
-    return builder.getOrCreate()
+    return (
+        SparkSession.builder.appName("learnsight-predict")
+        .master("local[2]")
+        .config("spark.driver.memory", "3g")
+        .getOrCreate()
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", required=True, help="run date from Airflow (YYYY-MM-DD)")
     parser.add_argument("--week", type=int, default=8)
-    parser.add_argument("--model-dir", default="models/rf_w8")
+    parser.add_argument("--model-dir", default=os.path.join(SPARK_DIR, "models", "rf_w8"))
     args = parser.parse_args()
+    feats_path = os.path.join(SPARK_DIR, "data", "features", f"features_w{args.week}.csv")
+    out_dir = os.path.join(SPARK_DIR, "data", "predictions")
+    out_path = os.path.join(out_dir, f"scores_w{args.week}.csv")
 
     spark = get_spark()
     spark.sparkContext.setLogLevel("WARN")
-    feats = spark.read.csv(f"data/features/features_w{args.week}.csv", header=True, inferSchema=True)
+    feats = spark.read.csv(feats_path, header=True, inferSchema=True)
 
     model = PipelineModel.load(args.model_dir)
     scored = model.transform(feats).withColumn(
@@ -39,7 +48,6 @@ if __name__ == "__main__":
         .select(*KEYS, "cutoff_week", "risk_score", "risk_group", "model_name", "scored_on")
     )
 
-    os.makedirs("data/predictions", exist_ok=True)
-    out.toPandas().to_csv(f"data/predictions/scores_w{args.week}.csv", index=False)
-    print(f"scored {out.count()} enrollments -> data/predictions/scores_w{args.week}.csv")
-    out.groupBy("risk_group").agg(F.count("*").alias("n"), F.round(F.avg("risk_score"), 3).alias("avg_score")).orderBy("risk_group").show()
+    os.makedirs(out_dir, exist_ok=True)
+    out.toPandas().to_csv(out_path, index=False)
+    print(f"scored {out.count()} enrollments -> {out_path}")
